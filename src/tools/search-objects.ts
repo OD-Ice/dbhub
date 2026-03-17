@@ -5,8 +5,11 @@ import type { Connector } from "../connectors/interface.js";
 import { quoteQualifiedIdentifier } from "../utils/identifier-quoter.js";
 import {
   getEffectiveSourceId,
+  resolveRequestedSourceId,
   trackToolRequest,
 } from "../utils/tool-handler-helpers.js";
+import { getToolRegistry } from "./registry.js";
+import { BUILTIN_TOOL_SEARCH_OBJECTS } from "./builtin-tools.js";
 
 /**
  * Object types that can be searched
@@ -23,6 +26,14 @@ export type DetailLevel = "names" | "summary" | "full";
 
 // Schema for search_objects tool (unified search and list)
 export const searchDatabaseObjectsSchema = {
+  database_id: z
+    .string()
+    .optional()
+    .describe("Database ID to query. Required when multiple databases are configured"),
+  source_id: z
+    .string()
+    .optional()
+    .describe("Alias of database_id for backward compatibility"),
   object_type: z
     .enum(["schema", "table", "column", "procedure", "function", "index"])
     .describe("Object type to search"),
@@ -493,6 +504,8 @@ async function searchIndexes(
 export function createSearchDatabaseObjectsToolHandler(sourceId?: string) {
   return async (args: any, extra: any) => {
     const {
+      database_id: _databaseId,
+      source_id: _sourceId,
       object_type,
       pattern = "%",
       schema,
@@ -500,6 +513,8 @@ export function createSearchDatabaseObjectsToolHandler(sourceId?: string) {
       detail_level = "names",
       limit = 100,
     } = args as {
+      database_id?: string;
+      source_id?: string;
       object_type: DatabaseObjectType;
       pattern?: string;
       schema?: string;
@@ -509,17 +524,27 @@ export function createSearchDatabaseObjectsToolHandler(sourceId?: string) {
     };
 
     const startTime = Date.now();
-    const effectiveSourceId = getEffectiveSourceId(sourceId);
+    let resolvedSourceId: string | undefined;
+    let effectiveSourceId = getEffectiveSourceId(sourceId);
     let success = true;
     let errorMessage: string | undefined;
 
     try {
+      resolvedSourceId = resolveRequestedSourceId(args, sourceId);
+      effectiveSourceId = getEffectiveSourceId(resolvedSourceId);
+
       // Ensure source is connected (handles lazy connections)
-      await ConnectorManager.ensureConnected(sourceId);
+      await ConnectorManager.ensureConnected(resolvedSourceId);
 
-      const connector = ConnectorManager.getCurrentConnector(sourceId);
-
-      // Tool is already registered, so it's enabled (no need to check)
+      const connector = ConnectorManager.getCurrentConnector(resolvedSourceId);
+      const actualSourceId = connector.getId();
+      const registry = getToolRegistry();
+      const toolConfig = registry.getBuiltinToolConfig(BUILTIN_TOOL_SEARCH_OBJECTS, actualSourceId);
+      if (!toolConfig) {
+        success = false;
+        errorMessage = `Tool 'search_objects' is not enabled for database '${actualSourceId}'`;
+        return createToolErrorResponse(errorMessage, "TOOL_DISABLED");
+      }
 
       // Validate table parameter
       if (table) {
@@ -574,6 +599,7 @@ export function createSearchDatabaseObjectsToolHandler(sourceId?: string) {
       }
 
       return createToolSuccessResponse({
+        database_id: actualSourceId,
         object_type,
         pattern,
         schema,
@@ -595,7 +621,7 @@ export function createSearchDatabaseObjectsToolHandler(sourceId?: string) {
       trackToolRequest(
         {
           sourceId: effectiveSourceId,
-          toolName: effectiveSourceId === "default" ? "search_objects" : `search_objects_${effectiveSourceId}`,
+          toolName: "search_objects",
           sql: `search_objects(object_type=${object_type}, pattern=${pattern}, schema=${schema || "all"}, table=${table || "all"}, detail_level=${detail_level})`,
         },
         startTime,

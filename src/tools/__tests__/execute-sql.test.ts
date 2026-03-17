@@ -35,11 +35,13 @@ const parseToolResponse = (response: any) => {
 describe('execute-sql tool', () => {
   let mockConnector: Connector;
   const mockGetCurrentConnector = vi.mocked(ConnectorManager.getCurrentConnector);
+  const mockGetAvailableSourceIds = vi.mocked(ConnectorManager.getAvailableSourceIds);
   const mockGetToolRegistry = vi.mocked(getToolRegistry);
 
   beforeEach(() => {
     mockConnector = createMockConnector('sqlite');
     mockGetCurrentConnector.mockReturnValue(mockConnector);
+    mockGetAvailableSourceIds.mockReturnValue(['test_source']);
 
     // Mock tool registry to return empty config (no readonly, no max_rows)
     mockGetToolRegistry.mockReturnValue({
@@ -90,6 +92,33 @@ describe('execute-sql tool', () => {
       expect(parsedResult.success).toBe(false);
       expect(parsedResult.error).toBe('Database error');
       expect(parsedResult.code).toBe('EXECUTION_ERROR');
+    });
+
+    it('should route by database_id in multi-database mode', async () => {
+      mockGetAvailableSourceIds.mockReturnValue(['db_a', 'db_b']);
+      const dbBConnector = createMockConnector('sqlite', 'db_b');
+      mockGetCurrentConnector.mockReturnValue(dbBConnector);
+      vi.mocked(dbBConnector.executeSQL).mockResolvedValue({ rows: [{ id: 2 }], rowCount: 1 });
+
+      const handler = createExecuteSqlToolHandler();
+      const result = await handler({ sql: 'SELECT 1', database_id: 'db_b' }, null);
+      const parsedResult = parseToolResponse(result);
+
+      expect(parsedResult.success).toBe(true);
+      expect(parsedResult.data.database_id).toBe('db_b');
+      expect(mockGetCurrentConnector).toHaveBeenCalledWith('db_b');
+    });
+
+    it('should require database_id in multi-database mode', async () => {
+      mockGetAvailableSourceIds.mockReturnValue(['db_a', 'db_b']);
+
+      const handler = createExecuteSqlToolHandler();
+      const result = await handler({ sql: 'SELECT 1' }, null);
+      const parsedResult = parseToolResponse(result);
+
+      expect(result.isError).toBe(true);
+      expect(parsedResult.code).toBe('EXECUTION_ERROR');
+      expect(parsedResult.error).toContain('database_id is required');
     });
   });
 

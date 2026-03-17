@@ -1,8 +1,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createExecuteSqlToolHandler } from "./execute-sql.js";
 import { createSearchDatabaseObjectsToolHandler, searchDatabaseObjectsSchema } from "./search-objects.js";
+import { createListDatabasesToolHandler, listDatabasesSchema } from "./list-databases.js";
 import { ConnectorManager } from "../connectors/manager.js";
-import { getExecuteSqlMetadata, getSearchObjectsMetadata } from "../utils/tool-metadata.js";
+import { getExecuteSqlMetadata, getListDatabasesMetadata, getSearchObjectsMetadata } from "../utils/tool-metadata.js";
 import { isReadOnlySQL } from "../utils/allowed-keywords.js";
 import { createCustomToolHandler, buildZodSchemaFromParameters } from "./custom-tool-handler.js";
 import type { ToolConfig } from "../types/config.js";
@@ -15,26 +16,30 @@ import { BUILTIN_TOOL_EXECUTE_SQL, BUILTIN_TOOL_SEARCH_OBJECTS } from "./builtin
  * @param server - The MCP server instance
  */
 export function registerTools(server: McpServer): void {
-  const sourceIds = ConnectorManager.getAvailableSourceIds();
-
-  if (sourceIds.length === 0) {
+  if (ConnectorManager.getAvailableSourceIds().length === 0) {
     throw new Error("No database sources configured");
   }
 
   const registry = getToolRegistry();
+  const enabledBuiltinTools = registry.getEnabledBuiltinToolNames();
 
-  // Register all enabled tools (both built-in and custom) for each source
-  for (const sourceId of sourceIds) {
+  if (enabledBuiltinTools.includes(BUILTIN_TOOL_EXECUTE_SQL)) {
+    registerExecuteSqlTool(server);
+  }
+  if (enabledBuiltinTools.includes(BUILTIN_TOOL_SEARCH_OBJECTS)) {
+    registerSearchObjectsTool(server);
+  }
+  registerListDatabasesTool(server);
+
+  // Register custom tools per source
+  for (const sourceId of ConnectorManager.getAvailableSourceIds()) {
     const enabledTools = registry.getEnabledToolConfigs(sourceId);
 
     for (const toolConfig of enabledTools) {
-      // Register based on tool name (built-in vs custom)
-      if (toolConfig.name === BUILTIN_TOOL_EXECUTE_SQL) {
-        registerExecuteSqlTool(server, sourceId);
-      } else if (toolConfig.name === BUILTIN_TOOL_SEARCH_OBJECTS) {
-        registerSearchObjectsTool(server, sourceId);
-      } else {
-        // Custom tool
+      if (
+        toolConfig.name !== BUILTIN_TOOL_EXECUTE_SQL &&
+        toolConfig.name !== BUILTIN_TOOL_SEARCH_OBJECTS
+      ) {
         registerCustomTool(server, sourceId, toolConfig);
       }
     }
@@ -45,10 +50,9 @@ export function registerTools(server: McpServer): void {
  * Register execute_sql tool for a source
  */
 function registerExecuteSqlTool(
-  server: McpServer,
-  sourceId: string
+  server: McpServer
 ): void {
-  const metadata = getExecuteSqlMetadata(sourceId);
+  const metadata = getExecuteSqlMetadata();
   server.registerTool(
     metadata.name,
     {
@@ -56,7 +60,7 @@ function registerExecuteSqlTool(
       inputSchema: metadata.schema,
       annotations: metadata.annotations,
     },
-    createExecuteSqlToolHandler(sourceId)
+    createExecuteSqlToolHandler()
   );
 }
 
@@ -64,10 +68,9 @@ function registerExecuteSqlTool(
  * Register search_objects tool for a source
  */
 function registerSearchObjectsTool(
-  server: McpServer,
-  sourceId: string
+  server: McpServer
 ): void {
-  const metadata = getSearchObjectsMetadata(sourceId);
+  const metadata = getSearchObjectsMetadata();
 
   server.registerTool(
     metadata.name,
@@ -82,7 +85,24 @@ function registerSearchObjectsTool(
         openWorldHint: false,
       },
     },
-    createSearchDatabaseObjectsToolHandler(sourceId)
+    createSearchDatabaseObjectsToolHandler()
+  );
+}
+
+/**
+ * Register list_databases tool
+ */
+function registerListDatabasesTool(server: McpServer): void {
+  const metadata = getListDatabasesMetadata();
+
+  server.registerTool(
+    metadata.name,
+    {
+      description: metadata.description,
+      inputSchema: listDatabasesSchema,
+      annotations: metadata.annotations,
+    },
+    createListDatabasesToolHandler()
   );
 }
 

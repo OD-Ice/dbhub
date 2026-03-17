@@ -7,6 +7,12 @@ import { ConnectorType } from "../connectors/interface.js";
 import { isReadOnlySQL, allowedKeywords } from "./allowed-keywords.js";
 import { requestStore } from "../requests/index.js";
 import { getClientIdentifier } from "./client-identifier.js";
+import { ConnectorManager } from "../connectors/manager.js";
+
+export interface DatabaseScopedArgs {
+  database_id?: string;
+  source_id?: string;
+}
 
 /**
  * Request metadata for tracking
@@ -24,6 +30,41 @@ export interface RequestMetadata {
  */
 export function getEffectiveSourceId(sourceId?: string): string {
   return sourceId || "default";
+}
+
+/**
+ * Resolve the requested database/source ID from tool arguments.
+ * Supports both database_id and source_id for backward compatibility.
+ */
+export function resolveRequestedSourceId(
+  args?: DatabaseScopedArgs,
+  boundSourceId?: string
+): string | undefined {
+  const databaseId = args?.database_id;
+  const sourceId = args?.source_id;
+
+  if (databaseId && sourceId && databaseId !== sourceId) {
+    throw new Error("database_id and source_id must match when both are provided");
+  }
+
+  if (boundSourceId) {
+    const requestedId = databaseId || sourceId;
+    if (requestedId && requestedId !== boundSourceId) {
+      throw new Error(`This tool is bound to database '${boundSourceId}', but received '${requestedId}'`);
+    }
+    return boundSourceId;
+  }
+
+  const resolvedId = databaseId || sourceId;
+  const availableSourceIds = ConnectorManager.getAvailableSourceIds?.();
+
+  if (!resolvedId && Array.isArray(availableSourceIds) && availableSourceIds.length > 1) {
+    throw new Error(
+      `database_id is required when multiple databases are configured. Available database IDs: ${availableSourceIds.join(", ")}`
+    );
+  }
+
+  return resolvedId;
 }
 
 /**

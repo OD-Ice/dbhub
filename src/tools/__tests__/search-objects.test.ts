@@ -1,10 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createSearchDatabaseObjectsToolHandler } from '../search-objects.js';
 import { ConnectorManager } from '../../connectors/manager.js';
+import { getToolRegistry } from '../registry.js';
 import type { Connector, ConnectorType, TableColumn, TableIndex } from '../../connectors/interface.js';
 
 // Mock dependencies
 vi.mock('../../connectors/manager.js');
+vi.mock('../registry.js');
 
 // Mock connector for testing
 const createMockConnector = (id: ConnectorType = 'sqlite'): Connector => ({
@@ -33,10 +35,14 @@ const parseToolResponse = (response: any) => {
 describe('search_database_objects tool', () => {
   let mockConnector: Connector;
   const mockGetCurrentConnector = vi.mocked(ConnectorManager.getCurrentConnector);
+  const mockGetToolRegistry = vi.mocked(getToolRegistry);
 
   beforeEach(() => {
     mockConnector = createMockConnector('sqlite');
     mockGetCurrentConnector.mockReturnValue(mockConnector);
+    mockGetToolRegistry.mockReturnValue({
+      getBuiltinToolConfig: vi.fn().mockReturnValue({}),
+    } as any);
   });
 
   afterEach(() => {

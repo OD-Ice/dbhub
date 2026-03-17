@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import { ConnectorManager } from "../connectors/manager.js";
-import { normalizeSourceId } from "./normalize-id.js";
 import { executeSqlSchema } from "../tools/execute-sql.js";
+import { listDatabasesSchema } from "../tools/list-databases.js";
+import { searchDatabaseObjectsSchema } from "../tools/search-objects.js";
 import { getToolRegistry } from "../tools/registry.js";
-import { BUILTIN_TOOL_EXECUTE_SQL } from "../tools/builtin-tools.js";
+import { BUILTIN_TOOL_EXECUTE_SQL, BUILTIN_TOOL_SEARCH_OBJECTS } from "../tools/builtin-tools.js";
 import type { ParameterConfig, ToolConfig } from "../types/config.js";
 
 /**
@@ -52,7 +53,7 @@ export function zodToParameters(schema: Record<string, z.ZodType<any>>): ToolPar
     const description = zodType.description || "";
 
     // Determine if required (Zod types are required by default unless optional)
-    const required = !(zodType instanceof z.ZodOptional);
+    const required = !(zodType instanceof z.ZodOptional) && !(zodType instanceof z.ZodDefault);
 
     // Determine type from Zod type
     let type = "string"; // default
@@ -84,34 +85,32 @@ export function zodToParameters(schema: Record<string, z.ZodType<any>>): ToolPar
  * @param sourceId - The source ID to get tool metadata for
  * @returns Tool metadata with name, description, and Zod schema
  */
-export function getExecuteSqlMetadata(sourceId: string): ToolMetadata {
+export function getExecuteSqlMetadata(sourceId?: string): ToolMetadata {
   const sourceIds = ConnectorManager.getAvailableSourceIds();
-  const sourceConfig = ConnectorManager.getSourceConfig(sourceId)!;
+  const sourceConfig = sourceId ? ConnectorManager.getSourceConfig(sourceId)! : ConnectorManager.getSourceConfig()!;
   const dbType = sourceConfig.type;
-  const isSingleSource = sourceIds.length === 1;
 
   // Get tool configuration from registry to extract readonly/max_rows
   const registry = getToolRegistry();
-  const toolConfig = registry.getBuiltinToolConfig(BUILTIN_TOOL_EXECUTE_SQL, sourceId);
+  const toolConfig = sourceId ? registry.getBuiltinToolConfig(BUILTIN_TOOL_EXECUTE_SQL, sourceId) : undefined;
   const executeOptions = {
     readonly: toolConfig?.readonly,
     maxRows: toolConfig?.max_rows,
   };
 
-  // Determine tool name based on single vs multi-source configuration
-  const toolName = isSingleSource ? "execute_sql" : `execute_sql_${normalizeSourceId(sourceId)}`;
+  const title = sourceId
+    ? `Execute SQL on ${sourceId} (${dbType})`
+    : sourceIds.length === 1
+      ? `Execute SQL (${dbType})`
+      : "Execute SQL Across Databases";
 
-  // Determine title (human-readable display name)
-  const title = isSingleSource
-    ? `Execute SQL (${dbType})`
-    : `Execute SQL on ${sourceId} (${dbType})`;
-
-  // Determine description with more context
   const readonlyNote = executeOptions.readonly ? " [READ-ONLY MODE]" : "";
   const maxRowsNote = executeOptions.maxRows ? ` (limited to ${executeOptions.maxRows} rows)` : "";
-  const description = isSingleSource
+  const description = sourceId
+    ? `Execute SQL queries on database '${sourceId}' (${dbType})${readonlyNote}${maxRowsNote}. Provide database_id when calling the shared tool.`
+    : sourceIds.length === 1
     ? `Execute SQL queries on the ${dbType} database${readonlyNote}${maxRowsNote}`
-    : `Execute SQL queries on the '${sourceId}' ${dbType} database${readonlyNote}${maxRowsNote}`;
+    : `Execute SQL queries on a configured database${readonlyNote}${maxRowsNote}. Provide database_id to select the target database.`;
 
   // Build annotations object with all standard MCP hints
   const isReadonly = executeOptions.readonly === true;
@@ -127,7 +126,7 @@ export function getExecuteSqlMetadata(sourceId: string): ToolMetadata {
   };
 
   return {
-    name: toolName,
+    name: "execute_sql",
     description,
     schema: executeSqlSchema,
     annotations,
@@ -139,24 +138,52 @@ export function getExecuteSqlMetadata(sourceId: string): ToolMetadata {
  * @param sourceId - The source ID to get tool metadata for
  * @returns Tool name, description, and annotations
  */
-export function getSearchObjectsMetadata(sourceId: string): { name: string; description: string; title: string } {
+export function getSearchObjectsMetadata(sourceId?: string): { name: string; description: string; title: string; schema: Record<string, z.ZodType<any>>; annotations: ToolAnnotations } {
   const sourceIds = ConnectorManager.getAvailableSourceIds();
-  const sourceConfig = ConnectorManager.getSourceConfig(sourceId)!;
+  const sourceConfig = sourceId ? ConnectorManager.getSourceConfig(sourceId)! : ConnectorManager.getSourceConfig()!;
   const dbType = sourceConfig.type;
-  const isSingleSource = sourceIds.length === 1;
 
-  const toolName = isSingleSource ? "search_objects" : `search_objects_${normalizeSourceId(sourceId)}`;
-  const title = isSingleSource
-    ? `Search Database Objects (${dbType})`
-    : `Search Database Objects on ${sourceId} (${dbType})`;
-  const description = isSingleSource
-    ? `Search and list database objects (schemas, tables, columns, procedures, functions, indexes) on the ${dbType} database`
-    : `Search and list database objects (schemas, tables, columns, procedures, functions, indexes) on the '${sourceId}' ${dbType} database`;
+  const title = sourceId
+    ? `Search Database Objects on ${sourceId} (${dbType})`
+    : sourceIds.length === 1
+      ? `Search Database Objects (${dbType})`
+      : "Search Database Objects Across Databases";
+  const description = sourceId
+    ? `Search and list database objects on database '${sourceId}' (${dbType}). Provide database_id when calling the shared tool.`
+    : sourceIds.length === 1
+      ? `Search and list database objects (schemas, tables, columns, procedures, functions, indexes) on the ${dbType} database`
+      : `Search and list database objects (schemas, tables, columns, procedures, functions, indexes) on a configured database. Provide database_id to select the target database.`;
 
   return {
-    name: toolName,
+    name: "search_objects",
     description,
     title,
+    schema: searchDatabaseObjectsSchema,
+    annotations: {
+      title,
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  };
+}
+
+export function getListDatabasesMetadata(): ToolMetadata {
+  const title = "List Configured Databases";
+  const description = "List all configured database connections in the current DBHub service.";
+
+  return {
+    name: "list_databases",
+    description,
+    schema: listDatabasesSchema,
+    annotations: {
+      title,
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
   };
 }
 
@@ -204,49 +231,14 @@ function buildExecuteSqlTool(sourceId: string, toolConfig?: ToolConfig): Tool {
  */
 function buildSearchObjectsTool(sourceId: string): Tool {
   const searchMetadata = getSearchObjectsMetadata(sourceId);
+  const registry = getToolRegistry();
+  const toolConfig = registry.getBuiltinToolConfig(BUILTIN_TOOL_SEARCH_OBJECTS, sourceId);
 
   return {
     name: searchMetadata.name,
     description: searchMetadata.description,
-    parameters: [
-      {
-        name: "object_type",
-        type: "string",
-        required: true,
-        description: "Object type to search",
-      },
-      {
-        name: "pattern",
-        type: "string",
-        required: false,
-        description: "LIKE pattern (% = any chars, _ = one char). Default: %",
-      },
-      {
-        name: "schema",
-        type: "string",
-        required: false,
-        description: "Filter to schema",
-      },
-      {
-        name: "table",
-        type: "string",
-        required: false,
-        description: "Filter to table (requires schema; column/index only)",
-      },
-      {
-        name: "detail_level",
-        type: "string",
-        required: false,
-        description: "Detail: names (minimal), summary (metadata), full (all)",
-      },
-      {
-        name: "limit",
-        type: "integer",
-        required: false,
-        description: "Max results (default: 100, max: 1000)",
-      },
-    ],
-    readonly: true, // search_objects is always readonly
+    parameters: zodToParameters(searchMetadata.schema),
+    readonly: !!toolConfig,
   };
 }
 

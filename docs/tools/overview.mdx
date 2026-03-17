@@ -6,8 +6,9 @@ title: "Overview"
 
 | Tool        | Command Name  | Description                                                         |
 | ----------- | ------------- | ------------------------------------------------------------------- |
-| Execute SQL | `execute_sql` or `execute_sql_{id}` | Execute single or multiple SQL statements (separated by semicolons) |
-| Search Objects | `search_objects` or `search_objects_{id}` | Search and list database objects (schemas, tables, columns, procedures, indexes) with pattern matching and token-efficient progressive disclosure |
+| Execute SQL | `execute_sql` | Execute single or multiple SQL statements (separated by semicolons) |
+| Search Objects | `search_objects` | Search and list database objects (schemas, tables, columns, procedures, indexes) with pattern matching and token-efficient progressive disclosure |
+| List Databases | `list_databases` | List all configured database connections in the current DBHub service |
 | Custom Tools | User-defined names | Define reusable, parameterized SQL operations in your `dbhub.toml` configuration file |
 
 ## Tool Configuration
@@ -16,13 +17,13 @@ By default, both `execute_sql` and `search_objects` are enabled for each databas
 
 ### Default Behavior
 
-If no `[[tools]]` entries are defined for a source, both `execute_sql` and `search_objects` are enabled by default:
+If no `[[tools]]` entries are defined for a source, `execute_sql` and `search_objects` are enabled by default. `list_databases` is always available as a service-level tool:
 
 ```toml
 [[sources]]
 id = "dev"
 dsn = "sqlite:///dev.db"
-# No [[tools]] entries = both execute_sql and search_objects enabled
+# No [[tools]] entries = execute_sql and search_objects enabled
 ```
 
 ### Selective Tool Exposure
@@ -124,7 +125,7 @@ This approach gives you fine-grained control: disable general SQL execution whil
 
 ## Tool Naming
 
-The tool name varies based on your configuration:
+Built-in tool names are shared across all configurations. In multi-database setups, pass `database_id` to select the target source:
 
 **Single database without `--id`:**
 ```bash
@@ -136,7 +137,7 @@ Tool name: `execute_sql`
 ```bash
 npx @bytebase/dbhub@latest --id prod --dsn "postgres://..."
 ```
-Tool name: `execute_sql_prod`
+Tool name: `execute_sql`
 
 **Multiple databases via TOML config:**
 ```toml
@@ -148,11 +149,9 @@ dsn = "postgres://..."
 id = "staging.mysql"
 dsn = "mysql://..."
 ```
-Tool names: `execute_sql_prod_pg` and `execute_sql_staging_mysql`
+Tool names: `execute_sql`, `search_objects`, `list_databases`
 
-<Note>
-Special characters in source IDs (hyphens, dots, etc.) are converted to underscores in tool names. For example, `prod-pg` becomes `execute_sql_prod_pg`.
-</Note>
+Example call: `execute_sql(database_id="prod-pg", sql="SELECT 1")`
 
 ## Next Steps
 

@@ -167,16 +167,16 @@ Command-line flags are passed when starting DBHub. These have the highest priori
 ### --id
 
 <ParamField path="--id" type="string" env="ID">
-  Instance identifier to suffix tool names. Useful when running multiple DBHub instances (e.g., in Cursor).
+  Instance identifier used as the default `database_id` when running a single DBHub instance. Useful when running multiple DBHub instances (e.g., in Cursor).
 
-  Tools will be named `execute_sql_{id}` for each instance.
+  Built-in tool names remain shared (`execute_sql`, `search_objects`, `list_databases`).
 
   ```bash
   npx @bytebase/dbhub@latest --id prod --dsn "postgres://user:pass@prod-host:5432/db"
   npx @bytebase/dbhub@latest --id staging --dsn "postgres://user:pass@staging-host:5432/db"
   ```
 
-  Result: `execute_sql_prod` and `execute_sql_staging` tools
+  Result: call `execute_sql(database_id="prod", ...)` and `execute_sql(database_id="staging", ...)`
 
   <Warning>
   Cannot be used with `--config` (TOML configuration). TOML config defines source IDs directly in the configuration file. Use command-line DSN configuration instead if you need the `--id` flag.

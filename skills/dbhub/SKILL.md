@@ -16,7 +16,7 @@ DBHub provides two MCP tools:
 | `search_objects` | Explore database structure — schemas, tables, columns, indexes, procedures, functions |
 | `execute_sql` | Run SQL statements against the database |
 
-If multiple databases are configured, DBHub registers separate tools for each source (for example, `search_objects_prod_pg`, `execute_sql_staging_mysql`). Select the desired database by calling the correspondingly named tool.
+If multiple databases are configured, DBHub keeps shared built-in tool names and selects the target source with `database_id`.
 
 ## The Explore-Then-Query Workflow
 
@@ -86,19 +86,19 @@ The `detail_level` parameter controls how much information `search_objects` retu
 
 ## Working with Multiple Databases
 
-When DBHub is configured with multiple database sources, it registers separate tool instances for each source. The tool names follow the pattern `{tool}_{source_id}`:
+When DBHub is configured with multiple database sources, built-in tools stay shared and you select the target database with `database_id`:
 
 ```
 # Query the production PostgreSQL database
-search_objects_prod_pg(object_type="table", schema="public", detail_level="names")
-execute_sql_prod_pg(sql="SELECT count(*) FROM orders")
+search_objects(database_id="prod_pg", object_type="table", schema="public", detail_level="names")
+execute_sql(database_id="prod_pg", sql="SELECT count(*) FROM orders")
 
 # Query the staging MySQL database
-search_objects_staging_mysql(object_type="table", detail_level="names")
-execute_sql_staging_mysql(sql="SELECT count(*) FROM orders")
+search_objects(database_id="staging_mysql", object_type="table", detail_level="names")
+execute_sql(database_id="staging_mysql", sql="SELECT count(*) FROM orders")
 ```
 
-In single-database setups, the tools are simply `search_objects` and `execute_sql` without any suffix. When the user mentions a specific database or environment, call the correspondingly named tool.
+In single-database setups, `database_id` can be omitted. When the user mentions a specific database or environment in a multi-database setup, pass that source ID as `database_id`.
 
 ## Searching for Specific Objects
 
@@ -144,5 +144,5 @@ When a query fails:
 
 - **Don't guess table or column names.** Always verify with `search_objects` first. A wrong guess wastes a round trip and confuses the conversation.
 - **Don't dump entire schemas upfront.** Use progressive disclosure — start with `names`, drill into `full` only for tables you'll actually query.
-- **Don't use the wrong tool in multi-database setups.** If the user mentions a specific database, call the source-specific tool variant (e.g., `execute_sql_prod_pg`) rather than the generic `execute_sql`.
+- **Don't query the wrong database in multi-database setups.** If the user mentions a specific database, pass that source ID as `database_id` rather than relying on the default database.
 - **Don't retry failed queries blindly.** If SQL fails, investigate the schema to understand why before retrying.

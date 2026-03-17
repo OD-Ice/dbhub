@@ -163,11 +163,11 @@ components:
         name:
           type: string
           description: Tool name
-          example: execute_sql_prod_pg
+          example: execute_sql
         description:
           type: string
           description: Tool description
-          example: Execute a SQL query on the 'prod_pg' postgres database (default)
+          example: Execute SQL queries on database 'prod_pg' (postgres). Provide database_id when calling the shared tool.
         parameters:
           type: array
           description: Tool input parameters

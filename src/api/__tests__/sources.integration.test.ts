@@ -140,6 +140,7 @@ describe('Data Sources API Integration Tests', () => {
         expect(source.tools).toBeDefined();
         expect(Array.isArray(source.tools)).toBe(true);
         expect(source.tools.length).toBeGreaterThan(0);
+        expect(source.tools.some((tool) => tool.name === 'execute_sql')).toBe(true);
       });
     });
 
@@ -181,9 +182,9 @@ describe('Data Sources API Integration Tests', () => {
       const writableSource = sources.find(s => s.id === 'writable_limited');
       const unlimitedSource = sources.find(s => s.id === 'writable_unlimited');
 
-      expect(readonlySource?.tools[0].name).toBe('execute_sql_readonly_limited');
-      expect(writableSource?.tools[0].name).toBe('execute_sql_writable_limited');
-      expect(unlimitedSource?.tools[0].name).toBe('execute_sql_writable_unlimited');
+      expect(readonlySource?.tools[0].name).toBe('execute_sql');
+      expect(writableSource?.tools[0].name).toBe('execute_sql');
+      expect(unlimitedSource?.tools[0].name).toBe('execute_sql');
     });
 
     it('should include source ID and type in tool descriptions', async () => {
@@ -204,11 +205,13 @@ describe('Data Sources API Integration Tests', () => {
       sources.forEach((source) => {
         const tool = source.tools[0];
         const sqlParam = tool.parameters.find((p) => p.name === 'sql');
+        const databaseParam = tool.parameters.find((p) => p.name === 'database_id');
 
         expect(sqlParam).toBeDefined();
         expect(sqlParam!.type).toBe('string');
         expect(sqlParam!.required).toBe(true);
         expect(sqlParam!.description).toContain('SQL');
+        expect(databaseParam).toBeDefined();
       });
     });
 
@@ -295,7 +298,7 @@ describe('Data Sources API Integration Tests', () => {
       const response = await fetch(`${BASE_URL}/api/sources/writable_limited`);
       const source = (await response.json()) as DataSource;
 
-      expect(source.tools[0].name).toBe('execute_sql_writable_limited');
+      expect(source.tools[0].name).toBe('execute_sql');
       expect(source.tools[0].description).toContain('writable_limited');
       expect(source.tools[0].description).toContain('sqlite');
     });
@@ -305,16 +308,18 @@ describe('Data Sources API Integration Tests', () => {
       const source = (await response.json()) as DataSource;
 
       const tool = source.tools[0];
-      expect(tool.name).toBe('execute_sql_readonly_limited');
+      expect(tool.name).toBe('execute_sql');
       expect(tool.description).toBeDefined();
       expect(tool.parameters).toBeDefined();
       expect(Array.isArray(tool.parameters)).toBe(true);
 
       // Verify sql parameter exists
       const sqlParam = tool.parameters.find((p) => p.name === 'sql');
+      const databaseParam = tool.parameters.find((p) => p.name === 'database_id');
       expect(sqlParam).toBeDefined();
       expect(sqlParam!.type).toBe('string');
       expect(sqlParam!.required).toBe(true);
+      expect(databaseParam).toBeDefined();
     });
   });
 

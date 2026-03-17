@@ -7,6 +7,7 @@ import { getToolRegistry } from "./registry.js";
 import { BUILTIN_TOOL_EXECUTE_SQL } from "./builtin-tools.js";
 import {
   getEffectiveSourceId,
+  resolveRequestedSourceId,
   trackToolRequest,
 } from "../utils/tool-handler-helpers.js";
 import { splitSQLStatements } from "../utils/sql-parser.js";
@@ -14,6 +15,14 @@ import { splitSQLStatements } from "../utils/sql-parser.js";
 // Schema for execute_sql tool
 export const executeSqlSchema = {
   sql: z.string().describe("SQL to execute (multiple statements separated by ;)"),
+  database_id: z
+    .string()
+    .optional()
+    .describe("Database ID to query. Required when multiple databases are configured"),
+  source_id: z
+    .string()
+    .optional()
+    .describe("Alias of database_id for backward compatibility"),
 };
 
 /**
@@ -34,24 +43,33 @@ function areAllStatementsReadOnly(sql: string, connectorType: ConnectorType): bo
  */
 export function createExecuteSqlToolHandler(sourceId?: string) {
   return async (args: any, extra: any) => {
-    const { sql } = args as { sql: string };
+    const { sql } = args as { sql: string; database_id?: string; source_id?: string };
     const startTime = Date.now();
-    const effectiveSourceId = getEffectiveSourceId(sourceId);
+    let resolvedSourceId: string | undefined;
+    let effectiveSourceId = getEffectiveSourceId(sourceId);
     let success = true;
     let errorMessage: string | undefined;
     let result: any;
 
     try {
+      resolvedSourceId = resolveRequestedSourceId(args, sourceId);
+      effectiveSourceId = getEffectiveSourceId(resolvedSourceId);
+
       // Ensure source is connected (handles lazy connections)
-      await ConnectorManager.ensureConnected(sourceId);
+      await ConnectorManager.ensureConnected(resolvedSourceId);
 
       // Get connector for the specified source (or default)
-      const connector = ConnectorManager.getCurrentConnector(sourceId);
+      const connector = ConnectorManager.getCurrentConnector(resolvedSourceId);
       const actualSourceId = connector.getId();
 
       // Get tool-specific configuration (tool is already registered, so it's enabled)
       const registry = getToolRegistry();
       const toolConfig = registry.getBuiltinToolConfig(BUILTIN_TOOL_EXECUTE_SQL, actualSourceId);
+      if (!toolConfig) {
+        errorMessage = `Tool 'execute_sql' is not enabled for database '${actualSourceId}'`;
+        success = false;
+        return createToolErrorResponse(errorMessage, "TOOL_DISABLED");
+      }
 
       // Check if SQL is allowed based on readonly mode (per-tool)
       const isReadonly = toolConfig?.readonly === true;
@@ -73,7 +91,7 @@ export function createExecuteSqlToolHandler(sourceId?: string) {
       const responseData = {
         rows: result.rows,
         count: result.rowCount,
-        source_id: effectiveSourceId,
+        database_id: actualSourceId,
       };
 
       return createToolSuccessResponse(responseData);
@@ -86,7 +104,7 @@ export function createExecuteSqlToolHandler(sourceId?: string) {
       trackToolRequest(
         {
           sourceId: effectiveSourceId,
-          toolName: effectiveSourceId === "default" ? "execute_sql" : `execute_sql_${effectiveSourceId}`,
+          toolName: "execute_sql",
           sql,
         },
         startTime,

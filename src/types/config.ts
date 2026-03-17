@@ -102,7 +102,10 @@ export interface CustomToolConfig {
 /**
  * Unified tool configuration (discriminated union)
  */
-export type ToolConfig = ExecuteSqlToolConfig | SearchObjectsToolConfig | CustomToolConfig;
+export type ToolConfig =
+  | ExecuteSqlToolConfig
+  | SearchObjectsToolConfig
+  | CustomToolConfig;
 
 /**
  * Complete TOML configuration file structure

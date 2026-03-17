@@ -5,6 +5,7 @@
 
 export const BUILTIN_TOOL_EXECUTE_SQL = "execute_sql";
 export const BUILTIN_TOOL_SEARCH_OBJECTS = "search_objects";
+export const BUILTIN_TOOL_LIST_DATABASES = "list_databases";
 
 export const BUILTIN_TOOLS = [
   BUILTIN_TOOL_EXECUTE_SQL,
